@@ -37,3 +37,12 @@ class MTAD_GAT(nn.Module):
         reconstruct = self.reconstruct_model(h)
         forecast = self.forest_model(h)
         return reconstruct, forecast
+
+    def get_embedding(self, x):
+        """Return GRU hidden state h (h_last) per window. h shape: (1, batch, hid_dim)."""
+        x = self.conv(x)
+        hf = self.feature_gat(x)
+        ht = self.temporal_gat(x)
+        h = torch.cat([x, hf, ht], dim=2)
+        h = self.gru(h)  # (num_layers, batch, hid_dim)
+        return h

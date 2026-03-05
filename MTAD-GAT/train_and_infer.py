@@ -39,6 +39,8 @@ IMG_DIR.mkdir(exist_ok=True)
 
 
 class MyDataset(Dataset):
+    """Single-subject window dataset (for inference)."""
+
     def __init__(self, data: np.ndarray, w: int = 64):
         self.data = data
         self.w = w
@@ -50,6 +52,28 @@ class MyDataset(Dataset):
 
     def __len__(self):
         return len(self.data) - self.w
+
+
+class PerSubjectWindowDataset(Dataset):
+    """Generate windows per subject, then concatenate. No cross-subject windows."""
+
+    def __init__(self, subject_arrays, w: int = 64):
+        self.subject_arrays = [arr.astype(np.float32) for arr in subject_arrays]
+        self.w = w
+        # cumulative window count: [0, n0, n0+n1, n0+n1+n2, ...]
+        window_counts = [max(0, len(s) - w) for s in self.subject_arrays]
+        self.cumulative = np.cumsum([0] + window_counts)
+
+    def __len__(self):
+        return self.cumulative[-1]
+
+    def __getitem__(self, idx):
+        subj_idx = np.searchsorted(self.cumulative[1:], idx, side="right")
+        local_idx = idx - self.cumulative[subj_idx]
+        data = self.subject_arrays[subj_idx]
+        x = data[local_idx : local_idx + self.w]
+        y = data[local_idx + self.w : local_idx + self.w + 1]
+        return x, y
 
 
 def load_subject_data(subject_id: str, is_train: bool) -> np.ndarray:
@@ -76,24 +100,22 @@ def main():
     train_ids = [train_val_ids[i] for i in perm[:56]]
     valid_ids = [train_val_ids[i] for i in perm[56:]]
 
-    # Load and concatenate train data
+    # Load data per subject (window generation is done per subject, then concatenated)
     train_blocks = [load_subject_data(sid, is_train=True) for sid in train_ids]
     valid_blocks = [load_subject_data(sid, is_train=True) for sid in valid_ids]
-    train_x = np.vstack(train_blocks).astype(np.float32)
-    valid_x = np.vstack(valid_blocks).astype(np.float32)
 
-    print(f"Train: {train_x.shape}, Valid: {valid_x.shape}")
-
-    # Dataset & DataLoader
     w = 64
+    trainset = PerSubjectWindowDataset(train_blocks, w=w)
+    validset = PerSubjectWindowDataset(valid_blocks, w=w)
+    print(f"Train: {len(trainset)} windows ({len(train_ids)} subjects), Valid: {len(validset)} windows ({len(valid_ids)} subjects)")
+
+    # DataLoader
     batch_size = 16
-    trainset = MyDataset(train_x, w=w)
-    validset = MyDataset(valid_x, w=w)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
     validloader = DataLoader(validset, batch_size=batch_size, shuffle=False)
 
     # Model
-    n_features = train_x.shape[1]
+    n_features = train_blocks[0].shape[1]
     model = MTAD_GAT(n_features=n_features, seq_len=w).to(device)
     criterion = JointLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
