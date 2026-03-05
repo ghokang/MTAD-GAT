@@ -1,9 +1,19 @@
+"""
+Experiment class for MTAD-GAT on fMRI time series.
+
+Key differences from the original SMD-based Exp:
+  - Accepts pre-split numpy arrays (train_x, valid_x, test_x) directly.
+  - No ground-truth anomaly labels required.
+  - Global threshold is determined by epsilon_threshold (unsupervised).
+  - Per-feature threshold falls back to pot_threshold if SPOT converges,
+    otherwise also uses epsilon_threshold.
+"""
+
 import os
 
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import precision_score, recall_score, f1_score
 from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -11,18 +21,46 @@ from tqdm import tqdm
 from data.dataset import MyDataset
 from model.loss import JointLoss
 from model.mtad_gat import MTAD_GAT
-from utils.adjustpred import adjust_predicts
 from utils.earlystop import EarlyStop
-from utils.evalmethods import pot_threshold, epsilon_threshold, bestf1_threshold
+from utils.evalmethods import pot_threshold, epsilon_threshold
 from utils.plot import plot_loss
-from utils.preprocess import preprocess
 
 
 class Exp:
-    def __init__(self, group, iter, epochs, batch_size, patience, lr, generate, w=64, gamma=1):
-        self.group = group
-
+    def __init__(
+        self,
+        iter: int,
+        name: str,
+        epochs: int,
+        batch_size: int,
+        patience: int,
+        lr: float,
+        train_x: np.ndarray,
+        valid_x: np.ndarray,
+        test_x: np.ndarray,
+        w: int = 64,
+        gamma: float = 1.0,
+        checkpoint_dir: str = "./checkpoint",
+        result_dir: str = "./result",
+        img_dir: str = "./img",
+    ):
+        """
+        Args:
+            iter        : run index (for reproducibility / multiple runs)
+            name        : subject ID string used for file naming
+            epochs      : maximum training epochs
+            batch_size  : mini-batch size
+            patience    : early-stopping patience
+            lr          : Adam learning rate
+            train_x     : z-score normalised train split  (T_train, n_features)
+            valid_x     : z-score normalised valid split  (T_valid, n_features)
+            test_x      : z-score normalised test split   (T_test,  n_features)
+            w           : sliding-window length
+            gamma       : reconstruction-score weight  (score = for_err + gamma * rec_err)
+            checkpoint_dir / result_dir / img_dir : output directories
+        """
         self.iter = iter
+        self.name = name
         self.epochs = epochs
         self.batch_size = batch_size
         self.patience = patience
@@ -30,230 +68,267 @@ class Exp:
         self.gamma = gamma
         self.lr = lr
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.path = './checkpoint/' + self.group + '_checkpoint_iter' + str(self.iter) + '.pkl'
-        self._get_data(generate=generate)
-        self._get_model()
+        self.train_x = train_x
+        self.valid_x = valid_x
+        self.test_x = test_x
 
-        if not os.path.exists('./checkpoint/'):
-            os.makedirs('./checkpoint/')
-        if not os.path.exists('./img/'):
-            os.makedirs('./img/')
-        if not os.path.exists('./result/'):
-            os.makedirs('./result/')
-
-    def _get_data(self, generate, train=True):
-        if train:
-            self.train_x, self.valid_x, self.test_x, self.test_y = preprocess(generate=generate, group=self.group)
-            trainset = MyDataset(self.train_x, w=self.w)
-            validset = MyDataset(self.valid_x, w=self.w)
-            testset = MyDataset(self.test_x, w=self.w)
-
-            self.trainloader = DataLoader(trainset, batch_size=self.batch_size, shuffle=True)
-            self.validloader = DataLoader(validset, batch_size=self.batch_size, shuffle=True)
-            self.testloader = DataLoader(testset, batch_size=self.batch_size, shuffle=True)
-
-            self.loss = {'train': {'forecast': [], 'reconstruct': [], 'total': []},
-                         'valid': {'forecast': [], 'reconstruct': [], 'total': []}}
-
-            print('train: {0}, valid: {1}, test: {2}'.format(len(trainset), len(validset), len(testset)))
+        # ── device ──────────────────────────────────────────────────────────
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
         else:
-            self.train_x, self.valid_x, self.test_x, self.test_y = preprocess(generate=generate, group=self.group)
-            self.train_x = np.vstack((self.train_x, self.valid_x))
+            self.device = torch.device("cpu")
 
-            trainset = MyDataset(self.train_x, w=self.w)
-            testset = MyDataset(self.test_x, w=self.w)
+        # ── output dirs ─────────────────────────────────────────────────────
+        for d in (checkpoint_dir, result_dir, img_dir):
+            os.makedirs(d, exist_ok=True)
 
-            self.trainloader = DataLoader(trainset, batch_size=self.batch_size, shuffle=True)
-            self.testloader = DataLoader(testset, batch_size=self.batch_size, shuffle=True)
+        self.checkpoint_path = os.path.join(
+            checkpoint_dir, f"{self.name}_checkpoint_iter__{self.iter},pkl"
+        )
+        self.result_dir = result_dir
+        self.img_dir = img_dir
 
-            print('train: {0}, test: {1}'.format(len(trainset), len(testset)))
+        # ── data loaders & model ────────────────────────────────────────────
+        self._build_loaders()
+        self._build_model()
 
-    def _get_model(self):
-        self.model = MTAD_GAT().to(self.device)
-        self.criterion = JointLoss()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
-        self.earlystopping = EarlyStop(patience=self.patience)
+    # ────────────────────────────────────────────────────────────────────────
+    # Internal helpers
+    # ────────────────────────────────────────────────────────────────────────
 
-    def _process_one_batch(self, batch_x, batch_y):
-        batch_x = batch_x.float().to(self.device)
-        batch_y = batch_y.float().to(self.device)
+    def _build_loaders(self):
+        n_features = self.train_x.shape[1]
 
-        reconstruct, forecast = self.model(batch_x)
-        forecast_loss, reconstruct_loss, loss = self.criterion(batch_x, batch_y, reconstruct, forecast)
+        trainset = MyDataset(self.train_x, w=self.w)
+        validset = MyDataset(self.valid_x, w=self.w)
+        testset  = MyDataset(self.test_x,  w=self.w)
 
-        return forecast_loss, reconstruct_loss, loss
-
-    def _get_score(self, data, dataloader):
-        self.model.eval()
-        forecasts, reconstructs = [], []
-        for (batch_x, batch_y) in tqdm(dataloader):
-            batch_x = batch_x.float().to(self.device)
-            batch_y = batch_y.float().to(self.device)
-
-            _, forecast = self.model(batch_x)
-
-            recon_x = torch.cat((batch_x[:, 1:, :], batch_y), dim=1)
-            reconstruct, _ = self.model(recon_x)
-
-            forecasts.append(forecast.detach().cpu().numpy())
-            reconstructs.append(reconstruct.detach().cpu().numpy()[:, -1, :])
-
-        forecasts = np.concatenate(forecasts, axis=0).squeeze()
-        reconstructs = np.concatenate(reconstructs, axis=0)
-        actuals = data[self.w:]
-
-        df = pd.DataFrame()
-        scores = np.zeros_like(actuals)
-        for i in range(actuals.shape[1]):
-            df["For_" + str(i)] = forecasts[:, i]
-            df["Rec_" + str(i)] = reconstructs[:, i]
-            df["Act_" + str(i)] = actuals[:, i]
-
-            score = np.sqrt((forecasts[:, i] - actuals[:, i]) ** 2) + self.gamma * np.sqrt(
-                (reconstructs[:, i] - actuals[:, i]) ** 2)
-            scores[:, i] = score
-            df["Score_" + str(i)] = score
-
-        scores = np.mean(scores, axis=1)
-        df['Score_Global'] = scores
-
-        return df
-
-    def fit(self):
-        # init loss
-        self.model.eval()
-        train_forecast_loss, train_reconstruct_loss, train_loss = [], [], []
-        for (batch_x, batch_y) in tqdm(self.trainloader):
-            forecast_loss, reconstruct_loss, loss = self._process_one_batch(batch_x, batch_y)
-            train_forecast_loss.append(forecast_loss.item())
-            train_reconstruct_loss.append(reconstruct_loss.item())
-            train_loss.append(loss.item())
-
-        self.model.eval()
-        valid_forecast_loss, valid_reconstruct_loss, valid_loss = [], [], []
-        for (batch_x, batch_y) in self.validloader:
-            forecast_loss, reconstruct_loss, loss = self._process_one_batch(batch_x, batch_y)
-            valid_forecast_loss.append(forecast_loss.item())
-            valid_reconstruct_loss.append(reconstruct_loss.item())
-            valid_loss.append(loss.item())
-
-        train_forecast_loss = np.sqrt(np.average(np.array(train_forecast_loss) ** 2))
-        valid_forecast_loss = np.sqrt(np.average(np.array(valid_forecast_loss) ** 2))
-        train_reconstruct_loss = np.sqrt(np.average(np.array(train_reconstruct_loss) ** 2))
-        valid_reconstruct_loss = np.sqrt(np.average(np.array(valid_reconstruct_loss) ** 2))
-        train_loss = np.sqrt(np.average(np.array(train_loss) ** 2))
-        valid_loss = np.sqrt(np.average(np.array(valid_loss) ** 2))
+        self.trainloader = DataLoader(trainset, batch_size=self.batch_size, shuffle=True,  drop_last=False)
+        self.validloader = DataLoader(validset, batch_size=self.batch_size, shuffle=False, drop_last=False)
+        self.testloader  = DataLoader(testset,  batch_size=self.batch_size, shuffle=False, drop_last=False)
 
         print(
-            "Iter: {0} Init || Total Loss| Train: {1:.6f} Vali: {2:.6f} || Forecast Loss| Train:{3:.6f} Valid"
-            ": {4:.6f} || Reconstruct Loss| Train: {5:.6f} Valid: {6:.6f}".format(
-                self.iter, train_loss, valid_loss, train_forecast_loss, valid_forecast_loss,
-                train_reconstruct_loss, valid_reconstruct_loss))
+            f"[{self.name}]  train={len(trainset)}  valid={len(validset)}  test={len(testset)}"
+            f"  features={n_features}  window={self.w}"
+        )
 
-        for e in range(self.epochs):
+    def _build_model(self):
+        n_features = self.train_x.shape[1]
+        self.model      = MTAD_GAT(n_features=n_features, seq_len=self.w).to(self.device)
+        self.criterion  = JointLoss()
+        self.optimizer  = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
+        self.earlystop  = EarlyStop(patience=self.patience)
+
+    def _process_batch(self, batch_x, batch_y):
+        batch_x = batch_x.float().to(self.device)
+        batch_y = batch_y.float().to(self.device)
+        reconstruct, forecast = self.model(batch_x)
+        f_loss, r_loss, loss  = self.criterion(batch_x, batch_y, reconstruct, forecast)
+        return f_loss, r_loss, loss
+
+    def _epoch_loss(self, loader):
+        """Compute RMSE of forecast / reconstruct / total loss over a loader (no grad)."""
+        f_list, r_list, t_list = [], [], []
+        for batch_x, batch_y in loader:
+            fl, rl, tl = self._process_batch(batch_x, batch_y)
+            f_list.append(fl.item())
+            r_list.append(rl.item())
+            t_list.append(tl.item())
+        f = float(np.sqrt(np.mean(np.array(f_list) ** 2)))
+        r = float(np.sqrt(np.mean(np.array(r_list) ** 2)))
+        t = float(np.sqrt(np.mean(np.array(t_list) ** 2)))
+        return f, r, t
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Training
+    # ────────────────────────────────────────────────────────────────────────
+
+    def fit(self):
+        """Train MTAD-GAT with early stopping."""
+        history = {
+            "train": {"forecast": [], "reconstruct": [], "total": []},
+            "valid": {"forecast": [], "reconstruct": [], "total": []},
+        }
+
+        # initial loss (before any training step)
+        self.model.eval()
+        with torch.no_grad():
+            tfl, trl, ttl = self._epoch_loss(self.trainloader)
+            vfl, vrl, vtl = self._epoch_loss(self.validloader)
+        print(
+            f"[{self.name}] Init  | total: train={ttl:.4f} val={vtl:.4f}"
+            f"  | for: {tfl:.4f}/{vfl:.4f}  | rec: {trl:.4f}/{vrl:.4f}"
+        )
+
+        for epoch in range(1, self.epochs + 1):
+            # ── train ────────────────────────────────────────────────────
             self.model.train()
-            train_forecast_loss, train_reconstruct_loss, train_loss = [], [], []
-            for (batch_x, batch_y) in tqdm(self.trainloader):
+            f_losses, r_losses, t_losses = [], [], []
+            for batch_x, batch_y in tqdm(self.trainloader, desc=f"  Epoch {epoch}", leave=False):
                 self.optimizer.zero_grad()
-                forecast_loss, reconstruct_loss, loss = self._process_one_batch(batch_x, batch_y)
-                train_forecast_loss.append(forecast_loss.item())
-                train_reconstruct_loss.append(reconstruct_loss.item())
-                train_loss.append(loss.item())
+                fl, rl, loss = self._process_batch(batch_x, batch_y)
                 loss.backward()
                 self.optimizer.step()
+                f_losses.append(fl.item())
+                r_losses.append(rl.item())
+                t_losses.append(loss.item())
 
+            tfl = float(np.sqrt(np.mean(np.array(f_losses) ** 2)))
+            trl = float(np.sqrt(np.mean(np.array(r_losses) ** 2)))
+            ttl = float(np.sqrt(np.mean(np.array(t_losses) ** 2)))
+
+            # ── validation ───────────────────────────────────────────────
             self.model.eval()
-            valid_forecast_loss, valid_reconstruct_loss, valid_loss = [], [], []
-            for (batch_x, batch_y) in self.validloader:
-                forecast_loss, reconstruct_loss, loss = self._process_one_batch(batch_x, batch_y)
-                valid_forecast_loss.append(forecast_loss.item())
-                valid_reconstruct_loss.append(reconstruct_loss.item())
-                valid_loss.append(loss.item())
+            with torch.no_grad():
+                vfl, vrl, vtl = self._epoch_loss(self.validloader)
 
-            train_forecast_loss = np.sqrt(np.average(np.array(train_forecast_loss) ** 2))
-            valid_forecast_loss = np.sqrt(np.average(np.array(valid_forecast_loss) ** 2))
-            train_reconstruct_loss = np.sqrt(np.average(np.array(train_reconstruct_loss) ** 2))
-            valid_reconstruct_loss = np.sqrt(np.average(np.array(valid_reconstruct_loss) ** 2))
-            train_loss = np.sqrt(np.average(np.array(train_loss) ** 2))
-            valid_loss = np.sqrt(np.average(np.array(valid_loss) ** 2))
-
-            self.loss['train']['forecast'].append(train_forecast_loss)
-            self.loss['train']['reconstruct'].append(train_reconstruct_loss)
-            self.loss['train']['total'].append(train_loss)
-            self.loss['valid']['forecast'].append(valid_forecast_loss)
-            self.loss['valid']['reconstruct'].append(valid_reconstruct_loss)
-            self.loss['valid']['total'].append(valid_loss)
+            history["train"]["forecast"].append(tfl)
+            history["train"]["reconstruct"].append(trl)
+            history["train"]["total"].append(ttl)
+            history["valid"]["forecast"].append(vfl)
+            history["valid"]["reconstruct"].append(vrl)
+            history["valid"]["total"].append(vtl)
 
             print(
-                "Iter: {0} Epoch: {1} || Total Loss| Train: {2:.6f} Vali: {3:.6f} || Forecast Loss| Train:{4:.6f} Valid"
-                ": {5:.6f} || Reconstruct Loss| Train: {6:.6f} Valid: {7:.6f}".format(
-                    self.iter, e+1, train_loss, valid_loss, train_forecast_loss, valid_forecast_loss,
-                    train_reconstruct_loss, valid_reconstruct_loss))
+                f"[{self.name}] Epoch {epoch:03d}  | total: train={ttl:.4f} val={vtl:.4f}"
+                f"  | for: {tfl:.4f}/{vfl:.4f}  | rec: {trl:.4f}/{vrl:.4f}"
+            )
 
-            self.earlystopping(valid_loss, self.model, self.path)
-            if self.earlystopping.early_stop:
-                print("Iter {0} is Early stopping!".format(self.iter))
+            self.earlystop(vtl, self.model, self.checkpoint_path)
+            if self.earlystop.early_stop:
+                print(f"[{self.name}] Early stopping at epoch {epoch}.")
                 break
-        self.model.load_state_dict(torch.load(self.path))
 
-        plot_loss(self.loss["train"]["forecast"], self.loss["train"]["reconstruct"], self.loss["train"]["total"],
-                  './img/' + str(self.group) + '_iter' + str(self.iter) + '_trainloss.png')
-        plot_loss(self.loss["valid"]["forecast"], self.loss["valid"]["reconstruct"], self.loss["valid"]["total"],
-                  './img/' + str(self.group) + '_iter' + str(self.iter) + '_validloss.png')
+        # reload best weights
+        self.model.load_state_dict(torch.load(self.checkpoint_path))
 
-    def predict(self, model_load=False, data_load=False):
+        # save loss curves
+        prefix = os.path.join(self.img_dir, f"{self.name}_iter{self.iter}")
+        plot_loss(
+            history["train"]["forecast"], history["train"]["reconstruct"], history["train"]["total"],
+            prefix + "_trainloss.png",
+        )
+        plot_loss(
+            history["valid"]["forecast"], history["valid"]["reconstruct"], history["valid"]["total"],
+            prefix + "_validloss.png",
+        )
+
+    # ────────────────────────────────────────────────────────────────────────
+    # Inference & anomaly scoring
+    # ────────────────────────────────────────────────────────────────────────
+
+    def _get_scores(self, data: np.ndarray, loader: DataLoader) -> pd.DataFrame:
+        """
+        Run model inference and compute per-feature + global anomaly scores.
+
+        Score_i      = |forecast_i - actual_i| + gamma * |reconstruct_i - actual_i|
+        Score_Global = mean(Score_i  for all i)
+        """
+        self.model.eval()
+        forecasts, reconstructs = [], []
+
+        with torch.no_grad():
+            for batch_x, batch_y in tqdm(loader, desc="  scoring", leave=False):
+                batch_x = batch_x.float().to(self.device)
+                batch_y = batch_y.float().to(self.device)
+
+                # forecast: model sees x[0..w-1], predicts x[w]
+                _, forecast = self.model(batch_x)
+                forecasts.append(forecast.cpu().numpy())
+
+                # reconstruction: shift window right by 1, get reconstruction of last step
+                recon_x = torch.cat([batch_x[:, 1:, :], batch_y], dim=1)
+                reconstruct, _ = self.model(recon_x)
+                reconstructs.append(reconstruct.cpu().numpy()[:, -1, :])
+
+        forecasts    = np.concatenate(forecasts,    axis=0).squeeze(axis=1)  # (N, n_features)
+        reconstructs = np.concatenate(reconstructs, axis=0)                  # (N, n_features)
+        actuals      = data[self.w:]                                          # (N, n_features)
+
+        n_features = actuals.shape[1]
+        df = pd.DataFrame()
+        per_feature_scores = np.zeros_like(actuals)
+
+        for i in range(n_features):
+            for_err = np.sqrt((forecasts[:, i]    - actuals[:, i]) ** 2)
+            rec_err = np.sqrt((reconstructs[:, i] - actuals[:, i]) ** 2)
+            score   = for_err + self.gamma * rec_err
+
+            df[f"For_{i}"]   = forecasts[:, i]
+            df[f"Rec_{i}"]   = reconstructs[:, i]
+            df[f"Act_{i}"]   = actuals[:, i]
+            df[f"Score_{i}"] = score
+            per_feature_scores[:, i] = score
+
+        df["Score_Global"] = per_feature_scores.mean(axis=1)
+        return df
+
+    # ────────────────────────────────────────────────────────────────────────
+
+    def predict(self, model_load: bool = False):
+        """
+        Compute anomaly scores and apply unsupervised thresholding.
+
+        Threshold strategy (no ground-truth labels):
+          - Per-feature : pot_threshold  (SPOT, uses train+test score distribution)
+          - Global      : epsilon_threshold  (fitted on train score only)
+
+        Outputs:
+          {result_dir}/{name}_iter_{iter}_trainresult.csv
+          {result_dir}/{name}_iter_{iter}_testresult.csv
+
+        Returns:
+          (trainresult DataFrame, testresult DataFrame, test_score array)
+        """
         if model_load:
-            self.model.load_state_dict(torch.load(self.path))
-        self._get_data(generate=False, train=False)
+            self.model.load_state_dict(torch.load(self.checkpoint_path))
 
-        actual_label = self.test_y[self.w:]
+        # reference distribution = train + validation (what the model was trained on)
+        train_valid_x = np.vstack([self.train_x, self.valid_x])
+        tv_dataset    = MyDataset(train_valid_x, w=self.w)
+        tv_loader     = DataLoader(tv_dataset, batch_size=self.batch_size, shuffle=False)
 
-        if data_load:
-            trainresult = pd.read_csv('./result/' + str(self.group) + '_iter' + str(self.iter) + '_trainresult.csv')
-            testresult = pd.read_csv('./result/' + str(self.group) + '_iter' + str(self.iter) + '_testresult.csv')
-        else:
-            trainresult = self._get_score(self.train_x, self.trainloader)
-            testresult = self._get_score(self.test_x, self.testloader)
+        trainresult = self._get_scores(train_valid_x, tv_loader)
+        testresult  = self._get_scores(self.test_x, self.testloader)
 
-        for i in range(self.test_x.shape[1]):
-            train_score = trainresult["Score_" + str(i)].values
-            test_score = testresult["Score_" + str(i)].values
+        n_features = self.train_x.shape[1]
 
-            threshold = pot_threshold(train_score, test_score)
+        # ── per-feature threshold (POT, no labels needed) ────────────────
+        for i in range(n_features):
+            tr_score = trainresult[f"Score_{i}"].values
+            te_score = testresult[f"Score_{i}"].values
+            try:
+                thr = pot_threshold(tr_score, te_score)
+            except Exception:
+                thr = epsilon_threshold(tr_score)
 
-            train_pred = (train_score > threshold).astype(np.int64) ## 1 또는 0
-            test_pred = (test_score > threshold).astype(np.int64)
+            trainresult[f"Pred_{i}"]      = (tr_score > thr).astype(np.int64)
+            trainresult[f"Threshold_{i}"] = thr
+            testresult[f"Pred_{i}"]       = (te_score > thr).astype(np.int64)
+            testresult[f"Threshold_{i}"]  = thr
 
-            trainresult["Pred_" + str(i)] = train_pred
-            trainresult["Threshold_" + str(i)] = threshold
-            testresult["Pred_" + str(i)] = test_pred
-            testresult["Threshold_" + str(i)] = threshold
+        # ── global threshold (epsilon, fitted on train-only score) ───────
+        tr_global  = trainresult["Score_Global"].values
+        te_global  = testresult["Score_Global"].values
+        thr_global = epsilon_threshold(tr_global)
 
-        train_score = trainresult["Score_Global"].values
-        test_score = testresult["Score_Global"].values
+        trainresult["Pred_Global"]      = (tr_global > thr_global).astype(np.int64)
+        trainresult["Threshold_Global"] = thr_global
+        testresult["Pred_Global"]       = (te_global > thr_global).astype(np.int64)
+        testresult["Threshold_Global"]  = thr_global
 
-        # threshold = pot_threshold(train_score, test_score)
-        threshold = bestf1_threshold(test_score, actual_label)
-        # threshold = epsilon_threshold(train_score)
+        # ── save ─────────────────────────────────────────────────────────
+        base = os.path.join(self.result_dir, f"{self.name}_iter_{self.iter}")
+        trainresult.to_csv(base + "_trainresult.csv", index=False)
+        testresult.to_csv(base  + "_testresult.csv",  index=False)
 
-        train_pred = (train_score > threshold).astype(np.int64)
-        test_pred = (test_score > threshold).astype(np.int64)
+        n_anomaly = int(testresult["Pred_Global"].sum())
+        pct       = 100.0 * n_anomaly / max(len(testresult), 1)
+        print(
+            f"[{self.name}] threshold={thr_global:.6f}  "
+            f"anomaly_points={n_anomaly}/{len(testresult)} ({pct:.1f}%)"
+        )
 
-        train_pred = adjust_predicts(np.zeros_like(train_pred), train_pred)
-        test_pred = adjust_predicts(actual_label, test_pred)
-
-        trainresult["Pred_Global"] = train_pred
-        trainresult["Label_Global"] = 0
-        trainresult["Threshold_Global"] = threshold
-
-        testresult["Pred_Global"] = test_pred
-        testresult["Label_Global"] = actual_label
-        testresult["Threshold_Global"] = threshold
-
-        trainresult.to_csv('./result/' + str(self.group) + '_iter' + str(self.iter) + '_trainresult.csv', index=False)
-        testresult.to_csv('./result/' + str(self.group) + '_iter' + str(self.iter) + '_testresult.csv', index=False)
-
-        print("Iter {0} Group {1} || precision: {2:.6f} recall: {3:.6f} f1: {4:.6f}".format(
-            self.iter, self.group, precision_score(actual_label, test_pred),
-            recall_score(actual_label, test_pred), f1_score(actual_label, test_pred)))
+        return trainresult, testresult, te_global
