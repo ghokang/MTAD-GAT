@@ -1,7 +1,10 @@
+from pathlib import Path
+
 from matplotlib import pyplot as plt
 
 
 def plot_loss(forecast, reconstruct, total, path):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     plt.figure()
     plt.plot(forecast, label="Forecast loss")
     plt.plot(reconstruct, label="Reconstruct loss")

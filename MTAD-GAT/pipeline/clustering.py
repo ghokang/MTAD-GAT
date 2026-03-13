@@ -7,7 +7,7 @@ and computes similarity between individual and cluster CMs.
 
 import numpy as np
 from typing import List, Dict, Tuple, Optional
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 from dataclasses import dataclass
@@ -75,7 +75,11 @@ def find_optimal_k(
     X: np.ndarray,
     k_range: range = range(2, 15),
     method: str = 'elbow',
-    random_state: int = 42
+    random_state: int = 42,
+    n_init: int = 3,
+    skip_silhouette: bool = False,
+    silhouette_sample_size: Optional[int] = 500,
+    use_minibatch: bool = False,
 ) -> Tuple[int, Dict]:
     """
     Find optimal number of clusters using Elbow method.
@@ -85,31 +89,47 @@ def find_optimal_k(
         k_range: Range of k values to try
         method: Method for finding optimal k ('elbow' or 'silhouette')
         random_state: Random seed
+        n_init: KMeans runs per k (lower = faster, use 1 if kernel crashes)
+        skip_silhouette: Skip silhouette computation (recommended if kernel crashes)
+        silhouette_sample_size: Subsample size for silhouette. None=full data.
+        use_minibatch: Use MiniBatchKMeans (less memory, kernel crash 방지)
         
     Returns:
         Tuple of (optimal_k, metrics_dict)
     """
     inertias = []
     silhouettes = []
+    k_list = list(k_range)
+    km_cls = MiniBatchKMeans if use_minibatch else KMeans
     
-    for k in k_range:
-        kmeans = KMeans(n_clusters=k, random_state=random_state, n_init=10)
-        labels = kmeans.fit_predict(X)
-        inertias.append(kmeans.inertia_)
+    for k in k_list:
+        km = km_cls(n_clusters=k, random_state=random_state, n_init=n_init)
+        labels = km.fit_predict(X)
+        inertias.append(km.inertia_)
         
-        if k >= 2:
-            sil = silhouette_score(X, labels)
-            silhouettes.append(sil)
+        if k >= 2 and not skip_silhouette:
+            try:
+                ss = min(silhouette_sample_size, len(X)) if silhouette_sample_size else None
+                sil = silhouette_score(
+                    X, labels,
+                    sample_size=ss,
+                    random_state=random_state if ss else None,
+                )
+                silhouettes.append(sil)
+            except (MemoryError, Exception):
+                silhouettes.append(0.0)
         else:
-            silhouettes.append(0)
+            silhouettes.append(0.0)
     
     if method == 'elbow':
-        optimal_k = _detect_elbow(list(k_range), inertias)
+        optimal_k = _detect_elbow(k_list, inertias)
+    elif silhouettes and any(s > 0 for s in silhouettes):
+        optimal_k = k_list[np.argmax(silhouettes)]
     else:
-        optimal_k = list(k_range)[np.argmax(silhouettes)]
+        optimal_k = _detect_elbow(k_list, inertias)
     
     metrics = {
-        'k_range': list(k_range),
+        'k_range': k_list,
         'inertias': inertias,
         'silhouettes': silhouettes,
         'optimal_k': optimal_k
@@ -157,7 +177,10 @@ def perform_clustering(
     n_clusters: Optional[int] = None,
     k_range: range = range(2, 15),
     standardize: bool = True,
-    random_state: int = 42
+    random_state: int = 42,
+    n_init: int = 10,
+    skip_silhouette: bool = False,
+    silhouette_sample_size: Optional[int] = 500,
 ) -> ClusteringResult:
     """
     Perform K-means clustering on CM data.
@@ -169,6 +192,9 @@ def perform_clustering(
         k_range: Range of k values for Elbow method
         standardize: Whether to standardize features
         random_state: Random seed
+        n_init: KMeans runs (lower if kernel crashes)
+        skip_silhouette: Skip silhouette computation (recommended if kernel crashes)
+        silhouette_sample_size: Subsample for silhouette; None=full. Ignored if skip_silhouette.
         
     Returns:
         ClusteringResult object
@@ -183,10 +209,17 @@ def perform_clustering(
         n_clusters, metrics = find_optimal_k(X_scaled, k_range, random_state=random_state)
         print(f"Optimal K determined by Elbow method: {n_clusters}")
     
-    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=n_init)
     labels = kmeans.fit_predict(X_scaled)
     
-    sil = silhouette_score(X_scaled, labels) if n_clusters > 1 else 0.0
+    if n_clusters > 1 and not skip_silhouette:
+        try:
+            ss = min(silhouette_sample_size, len(X_scaled)) if silhouette_sample_size else None
+            sil = silhouette_score(X_scaled, labels, sample_size=ss, random_state=random_state if ss else None)
+        except (MemoryError, Exception):
+            sil = 0.0
+    else:
+        sil = 0.0
     
     return ClusteringResult(
         n_clusters=n_clusters,

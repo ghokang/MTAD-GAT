@@ -28,6 +28,7 @@ from model.mtad_gat import MTAD_GAT
 from pipeline.segmentation import (
     Segment,
     load_anomaly_results,
+    load_original_timeseries,
     load_test_subject_ids,
     segment_by_anomaly,
     _merge_short_segments,
@@ -216,6 +217,78 @@ def segment_by_anomaly_length_smooth(
         subject_id=subject_id,
         window_size=window_size,
     )
+
+
+# ---------------------------------------------------------------------------
+# segment_all_subjects_embedding - for use in full_pipeline
+# ---------------------------------------------------------------------------
+def segment_all_subjects_embedding(
+    data_path: Path,
+    checkpoint_path: Path,
+    min_segment_len: int = 30,
+    window_size: int = 64,
+    subject_ids: List[str] = None,
+    split_dir: Path = None,
+    top_k: int = 20,
+    smooth_window: int = 5,
+    device=None,
+    data_pre_path: Path = None,
+    verbose: bool = True,
+) -> dict:
+    """
+    Segment all subjects using embedding change-based method.
+    Returns Dict[subject_id, List[Segment]] compatible with segment_all_subjects.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    
+    if subject_ids is None:
+        if split_dir is None:
+            split_dir = data_path.parent / "data_pre" / "split_info"
+        subject_ids = load_test_subject_ids(split_dir)
+        if subject_ids is None:
+            base = data_pre_path or data_path
+            subject_ids = [f.stem.replace("test_", "").replace("train_", "") for f in sorted(base.glob("*.csv"))]
+    
+    def _load_data(sid: str) -> np.ndarray:
+        if data_pre_path:
+            f = data_pre_path / f"test_{sid}.csv"
+            if f.exists():
+                return pd.read_csv(f, header=0).values.astype(np.float32)
+        return load_original_timeseries(data_path, sid)
+    
+    checkpoint_path = Path(checkpoint_path)
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    
+    sample = _load_data(subject_ids[0])
+    n_features = sample.shape[1]
+    model = MTAD_GAT(n_features=n_features, seq_len=window_size).to(device)
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    model.eval()
+    
+    all_segments = {}
+    for sid in tqdm(subject_ids, desc="Embedding segmentation", disable=not verbose):
+        try:
+            data = _load_data(sid)
+            embeddings = extract_embeddings(model, data, device, w=window_size)
+            segs = segment_by_embedding_change(
+                timeseries=data,
+                embeddings=embeddings,
+                subject_id=sid,
+                window_size=window_size,
+                min_segment_len=min_segment_len,
+                top_k=top_k,
+                smooth_window=smooth_window,
+            )
+            all_segments[sid] = segs
+            if verbose:
+                print(f"Subject {sid}: {len(segs)} segments")
+        except Exception as e:
+            if verbose:
+                print(f"Error processing subject {sid}: {e}")
+            continue
+    return all_segments
 
 
 # ---------------------------------------------------------------------------

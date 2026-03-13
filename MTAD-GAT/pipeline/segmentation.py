@@ -155,6 +155,15 @@ def segment_by_anomaly(
     return segments
 
 
+def smooth_prediction(pred: np.ndarray, window: int = 5, threshold: float = 0.5) -> np.ndarray:
+    """Smooth binary prediction with rolling mean and re-threshold."""
+    if window <= 1:
+        return pred
+    kernel = np.ones(window) / window
+    smoothed = np.convolve(pred.astype(float), kernel, mode="same")
+    return (smoothed >= threshold).astype(np.int64)
+
+
 def _merge_short_segments(
     segments: List[Segment],
     timeseries: np.ndarray,
@@ -219,6 +228,8 @@ def segment_all_subjects(
     window_size: int = 64,
     subject_ids: Optional[List[str]] = None,
     split_dir: Optional[Path] = None,
+    method: str = "anomaly",
+    smooth_window: int = 5,
 ) -> Dict[str, List[Segment]]:
     """
     Segment time series for subjects.
@@ -231,6 +242,8 @@ def segment_all_subjects(
         subject_ids: If provided, only process these subjects. If None and split_dir
                      has test_subjects.txt, use test subjects only.
         split_dir: Path to split_info dir (for loading test_subjects.txt)
+        method: Segmentation method - "anomaly" | "anomaly_smooth"
+        smooth_window: Rolling window for smoothing (only used when method="anomaly_smooth")
         
     Returns:
         Dictionary mapping subject_id to list of segments
@@ -253,9 +266,14 @@ def segment_all_subjects(
             timeseries = load_original_timeseries(data_path, subject_id)
             _, pred_global = load_anomaly_results(result_path, subject_id)
             
+            if method == "anomaly_smooth":
+                pred_to_use = smooth_prediction(pred_global, window=smooth_window)
+            else:
+                pred_to_use = pred_global
+            
             segments = segment_by_anomaly(
                 timeseries=timeseries,
-                pred_global=pred_global,
+                pred_global=pred_to_use,
                 min_segment_len=min_segment_len,
                 subject_id=subject_id,
                 window_size=window_size
