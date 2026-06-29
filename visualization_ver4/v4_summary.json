@@ -1,0 +1,63 @@
+{
+  "version": "v4",
+  "description": "per-cluster BrainLM + Raw Timeseries input",
+  "K": 4,
+  "SEQ_LEN": 1,
+  "STRIDE": 1,
+  "n_subjects": 27,
+  "n_segments": 308,
+  "n_ts_examples_total": 308,
+  "trained_clusters": [
+    0,
+    1,
+    2
+  ],
+  "cross_cluster_cosine_mean": -0.0056139106551806135,
+  "cross_cluster_cosine_min": -0.05932534486055374,
+  "cross_cluster_cosine_max": 0.04774928838014603,
+  "cluster_results": [
+    {
+      "cluster_id": 0,
+      "status": "ok",
+      "n_train": 62,
+      "n_val": 20,
+      "n_test": 17,
+      "n_latents": 99,
+      "max_time_steps": 252,
+      "final_train_loss": 92.80759334564209,
+      "final_val_loss": 98.82568359375,
+      "n_epochs_trained": 17
+    },
+    {
+      "cluster_id": 1,
+      "status": "ok",
+      "n_train": 86,
+      "n_val": 20,
+      "n_test": 15,
+      "n_latents": 121,
+      "max_time_steps": 292,
+      "final_train_loss": 92.19617600874467,
+      "final_val_loss": 101.15229034423828,
+      "n_epochs_trained": 24
+    },
+    {
+      "cluster_id": 2,
+      "status": "ok",
+      "n_train": 52,
+      "n_val": 9,
+      "n_test": 11,
+      "n_latents": 72,
+      "max_time_steps": 237,
+      "final_train_loss": 92.9699216570173,
+      "final_val_loss": 115.66756820678711,
+      "n_epochs_trained": 19
+    },
+    {
+      "cluster_id": 3,
+      "status": "skipped",
+      "n_train": 12,
+      "n_val": 0,
+      "n_test": 4
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "cm_value_type": "fisher_z",
+  "n_subjects": 27,
+  "n_segments": 308,
+  "n_cms": 308,
+  "n_clusters": 4,
+  "silhouette_score": 0.0,
+  "cluster_sizes": {
+    "0": 99,
+    "1": 121,
+    "2": 72,
+    "3": 16
+  },
+  "latent_dim": 256,
+  "final_train_loss": 0.10949061531573534,
+  "final_val_loss": 0.08367478102445602
+}

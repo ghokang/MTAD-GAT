@@ -1,0 +1,52 @@
+{
+  "clusters": [
+    {
+      "version": "v2_per_cluster",
+      "cluster_id": 0,
+      "cm_value_type": "fisher_z",
+      "k": 4,
+      "seq_len": 16,
+      "stride": 8,
+      "n_sequences_train": 9,
+      "n_sequences_val": 1,
+      "n_sequences_test": 1,
+      "final_train_loss": 0.10744164884090424,
+      "final_val_loss": 0.1248120367527008,
+      "latents_path": "/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2/latents_v2_cluster0_z.npy",
+      "cluster_ids_path": "/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2/cluster_ids_v2_cluster0_z.npy",
+      "checkpoint_dir": "/Users/mac/Desktop/paper/code/MTAD-GAT/checkpoint/brainlm_v2/cluster_0_z"
+    },
+    {
+      "version": "v2_per_cluster",
+      "cluster_id": 1,
+      "cm_value_type": "fisher_z",
+      "k": 4,
+      "seq_len": 16,
+      "stride": 8,
+      "n_sequences_train": 12,
+      "n_sequences_val": 1,
+      "n_sequences_test": 1,
+      "final_train_loss": 0.06902184337377548,
+      "final_val_loss": 0.041085876524448395,
+      "latents_path": "/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2/latents_v2_cluster1_z.npy",
+      "cluster_ids_path": "/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2/cluster_ids_v2_cluster1_z.npy",
+      "checkpoint_dir": "/Users/mac/Desktop/paper/code/MTAD-GAT/checkpoint/brainlm_v2/cluster_1_z"
+    },
+    {
+      "version": "v2_per_cluster",
+      "cluster_id": 2,
+      "cm_value_type": "fisher_z",
+      "k": 4,
+      "seq_len": 16,
+      "stride": 8,
+      "n_sequences_train": 6,
+      "n_sequences_val": 1,
+      "n_sequences_test": 1,
+      "final_train_loss": 0.17190156877040863,
+      "final_val_loss": 0.15996301174163818,
+      "latents_path": "/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2/latents_v2_cluster2_z.npy",
+      "cluster_ids_path": "/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2/cluster_ids_v2_cluster2_z.npy",
+      "checkpoint_dir": "/Users/mac/Desktop/paper/code/MTAD-GAT/checkpoint/brainlm_v2/cluster_2_z"
+    }
+  ]
+}

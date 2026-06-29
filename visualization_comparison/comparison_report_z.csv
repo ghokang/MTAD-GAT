@@ -1,0 +1,4 @@
+version,found,brainlm_mode,latent_unit,cm_suffix,cm_value_type,k_clusters,n_latent_samples,latent_dim,final_train_loss,final_val_loss,silhouette_latent,silhouette_note,output_dir,summary_path,latents_path
+v1,True,single,per_CM,z,fisher_z,4.0,308.0,256.0,0.10949061531573534,0.08367478102445602,0.07214690744876862,,/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver1,/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver1/pipeline_summary_z.json,/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver1/latents_z.npy
+v2,False,per_cluster,per_sequence_CLS,z,,,,,,,,,/Users/mac/Desktop/paper/code/MTAD-GAT/visualization_ver2,,
+v3,False,single,per_sequence_CLS,z,,,,,,,,,,,

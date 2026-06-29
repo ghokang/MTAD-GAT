@@ -1,0 +1,13 @@
+{
+  "version": "v2",
+  "cm_value_type": "fisher_z",
+  "k": 4,
+  "seq_len": 16,
+  "stride": 8,
+  "n_sequences_total": 34,
+  "n_sequences_train": 28,
+  "n_sequences_val": 3,
+  "n_sequences_test": 3,
+  "final_train_loss": 0.12328071147203445,
+  "final_val_loss": 0.10746317356824875
+}
