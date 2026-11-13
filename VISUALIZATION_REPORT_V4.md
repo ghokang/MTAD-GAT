@@ -145,7 +145,7 @@ V3(공유 BrainLM)에서는 세 State가 완전히 겹쳐 있었음(cosine ≈ 0
 
 **좌측 — Cosine Similarity Heatmap:**  
 각 State의 평균 latent 벡터(L2 정규화) 간 코사인 유사도. 대각선 = 1 (자기 자신), 오프-대각 = State 간 유사성.
-
+              
 - **오프-대각 평균 = -0.006 ≈ 0** → 세 State의 latent 표현 방향이 서로 **거의 직교**
 - 직교(cosine=0)의 의미: 각 State BrainLM이 완전히 다른 방향의 표현 공간을 학습했음
 - 음수 값(-0.059): 적극적으로 반대 방향 → 서로 억제 관계에 있는 뇌 패턴일 수 있음

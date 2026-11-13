@@ -1,0 +1,181 @@
+{
+  "K": 4,
+  "window": 64,
+  "stride": 64,
+  "device": "mps",
+  "shuffle_control": false,
+  "concat": [
+    {
+      "state": 0,
+      "n_segments": 99,
+      "total_TP": 10041,
+      "n_windows": 156,
+      "n_straddle": 82,
+      "straddle_pct": 52.56410256410257
+    },
+    {
+      "state": 1,
+      "n_segments": 121,
+      "total_TP": 14330,
+      "n_windows": 223,
+      "n_straddle": 107,
+      "straddle_pct": 47.98206278026906
+    },
+    {
+      "state": 2,
+      "n_segments": 72,
+      "total_TP": 6581,
+      "n_windows": 102,
+      "n_straddle": 63,
+      "straddle_pct": 61.76470588235294
+    },
+    {
+      "state": 3,
+      "n_segments": 16,
+      "total_TP": 1448,
+      "n_windows": 22,
+      "n_straddle": 12,
+      "straddle_pct": 54.54545454545454
+    }
+  ],
+  "training": [
+    {
+      "state": 0,
+      "status": "ok",
+      "n_windows": 156,
+      "n_train": 99,
+      "n_val": 46,
+      "n_test": 11,
+      "final_train_loss": 73.05523388202374,
+      "final_val_loss": 77.50985209147136,
+      "best_val_loss": 76.27475229899089,
+      "n_epochs": 50,
+      "latent_shape": [
+        156,
+        256
+      ]
+    },
+    {
+      "state": 1,
+      "status": "ok",
+      "n_windows": 223,
+      "n_train": 167,
+      "n_val": 32,
+      "n_test": 24,
+      "final_train_loss": 66.28709902082171,
+      "final_val_loss": 67.72150325775146,
+      "best_val_loss": 64.8347635269165,
+      "n_epochs": 50,
+      "latent_shape": [
+        223,
+        256
+      ]
+    },
+    {
+      "state": 2,
+      "status": "ok",
+      "n_windows": 102,
+      "n_train": 66,
+      "n_val": 9,
+      "n_test": 27,
+      "final_train_loss": 89.34793768988715,
+      "final_val_loss": 129.8137969970703,
+      "best_val_loss": 105.151123046875,
+      "n_epochs": 16,
+      "latent_shape": [
+        102,
+        256
+      ]
+    },
+    {
+      "state": 3,
+      "status": "ok",
+      "n_windows": 22,
+      "n_train": 14,
+      "n_val": 2,
+      "n_test": 6,
+      "final_train_loss": 93.9445571899414,
+      "final_val_loss": 100.36912536621094,
+      "best_val_loss": 80.36552429199219,
+      "n_epochs": 31,
+      "latent_shape": [
+        22,
+        256
+      ]
+    }
+  ],
+  "cross_state_cosine": {
+    "State0": {
+      "State0": 1.0,
+      "State1": 0.06781069934368134,
+      "State2": 0.09548403322696686,
+      "State3": 0.20992182195186615
+    },
+    "State1": {
+      "State0": 0.06781069934368134,
+      "State1": 0.9999998807907104,
+      "State2": 0.07883962988853455,
+      "State3": 0.07295455038547516
+    },
+    "State2": {
+      "State0": 0.09548403322696686,
+      "State1": 0.07883962988853455,
+      "State2": 1.0,
+      "State3": 0.17188426852226257
+    },
+    "State3": {
+      "State0": 0.20992182195186615,
+      "State1": 0.07295455038547516,
+      "State2": 0.17188426852226257,
+      "State3": 0.9999998807907104
+    }
+  },
+  "null_95ci": [
+    -0.1212486877114299,
+    0.12003767401159797
+  ],
+  "offdiag_mean": 0.11614916721979777,
+  "offdiag_inside_null": 8,
+  "offdiag_total": 12,
+  "rsa_cka": [
+    {
+      "pair": "State0 vs State1",
+      "RSA_r": -0.07566012319890834,
+      "CKA": 0.14405447244644165,
+      "n_used": 22
+    },
+    {
+      "pair": "State0 vs State2",
+      "RSA_r": -0.023350739125833575,
+      "CKA": 0.11824800074100494,
+      "n_used": 22
+    },
+    {
+      "pair": "State0 vs State3",
+      "RSA_r": 0.05618942215403186,
+      "CKA": 0.10779648274183273,
+      "n_used": 22
+    },
+    {
+      "pair": "State1 vs State2",
+      "RSA_r": -0.045779954527527235,
+      "CKA": 0.1048896461725235,
+      "n_used": 22
+    },
+    {
+      "pair": "State1 vs State3",
+      "RSA_r": -0.07319969645000521,
+      "CKA": 0.15125472843647003,
+      "n_used": 22
+    },
+    {
+      "pair": "State2 vs State3",
+      "RSA_r": -0.004758026159852394,
+      "CKA": 0.06690674275159836,
+      "n_used": 22
+    }
+  ],
+  "recon_self_mean": 83.17835478974786,
+  "recon_cross_mean": 80.12220011630774,
+  "recon_pct_increase": -3.674218708899979
+}

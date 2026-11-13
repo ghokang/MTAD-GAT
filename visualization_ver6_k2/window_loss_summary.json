@@ -1,0 +1,9 @@
+{
+  "K": 2,
+  "window": 64,
+  "per_model": [
+    {
+      "model": 0,
+      "n_self": 202,
+      "n_other": 303,
+      "self_mean": 

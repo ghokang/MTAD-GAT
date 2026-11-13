@@ -1,0 +1,88 @@
+{
+  "K": 2,
+  "window": 64,
+  "stride": 64,
+  "device": "mps",
+  "shuffle_control": true,
+  "shuffle_seed": 13,
+  "concat": [
+    {
+      "state": 0,
+      "n_segments": 138,
+      "total_TP": 15181,
+      "n_windows": 237,
+      "n_straddle": 116,
+      "straddle_pct": 48.9451476793249
+    },
+    {
+      "state": 1,
+      "n_segments": 170,
+      "total_TP": 17219,
+      "n_windows": 269,
+      "n_straddle": 151,
+      "straddle_pct": 56.13382899628253
+    }
+  ],
+  "training": [
+    {
+      "state": 0,
+      "status": "ok",
+      "n_windows": 237,
+      "n_train": 166,
+      "n_val": 42,
+      "n_test": 29,
+      "final_train_loss": 60.87195151192801,
+      "final_val_loss": 63.554463704427086,
+      "best_val_loss": 62.78022003173828,
+      "n_epochs": 50,
+      "latent_shape": [
+        237,
+        256
+      ]
+    },
+    {
+      "state": 1,
+      "status": "ok",
+      "n_windows": 269,
+      "n_train": 190,
+      "n_val": 34,
+      "n_test": 45,
+      "final_train_loss": 58.739357471466064,
+      "final_val_loss": 61.15057601928711,
+      "best_val_loss": 59.05366973876953,
+      "n_epochs": 50,
+      "latent_shape": [
+        269,
+        256
+      ]
+    }
+  ],
+  "cross_state_cosine": {
+    "State0": {
+      "State0": 0.9999998807907104,
+      "State1": 0.15027347207069397
+    },
+    "State1": {
+      "State0": 0.15027347207069397,
+      "State1": 1.0000001192092896
+    }
+  },
+  "null_95ci": [
+    -0.1212486877114299,
+    0.12003767401159797
+  ],
+  "offdiag_mean": 0.15027347207069397,
+  "offdiag_inside_null": 0,
+  "offdiag_total": 2,
+  "rsa_cka": [
+    {
+      "pair": "State0 vs State1",
+      "RSA_r": 0.0010118105900665366,
+      "CKA": 0.020896879956126213,
+      "n_used": 237
+    }
+  ],
+  "recon_self_mean": 56.20878869598987,
+  "recon_cross_mean": 59.84495847739426,
+  "recon_pct_increase": 6.469041347023019
+}

@@ -1,0 +1,4 @@
+cluster_id,status,n_train,n_val,n_test,n_latents,max_time_steps,final_train_loss,final_val_loss,n_epochs_trained
+0,ok,115,30,24,169.0,279.0,84.23264973958334,93.66485214233398,49.0
+1,ok,84,19,19,122.0,242.0,76.6940786188299,91.89329528808594,50.0
+2,skipped,13,0,4,,,,,

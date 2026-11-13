@@ -1,0 +1,3 @@
+state,status,n_windows,n_train,n_val,n_test,final_train_loss,final_val_loss,best_val_loss,n_epochs,latent_shape
+0,ok,215,145,26,44,65.40478676243832,69.70908737182617,69.70908737182617,50,"[215, 256]"
+1,ok,290,210,49,31,56.87117936876085,54.85878154209682,54.62510136195591,50,"[290, 256]"

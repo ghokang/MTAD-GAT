@@ -25,3 +25,11 @@ __pycache__/
 .vscode/
 .idea/
 *.swp
+
+# ── 별개 저장소 (PostFAB_Trace) 혼입 방지 ─────────────────
+PostFAB/
+node_modules/
+
+# ── 재생성 가능한 대용량 중간 캐시 ────────────────────────
+checkpoint/brainlm_v3/cache/
+checkpoint/global_checkpoint_iter_*.pkl

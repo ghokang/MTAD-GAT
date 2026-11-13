@@ -1,0 +1,50 @@
+{
+  "version": "v4",
+  "description": "per-cluster BrainLM + Raw Timeseries input",
+  "K": 3,
+  "SEQ_LEN": 1,
+  "STRIDE": 1,
+  "n_subjects": 27,
+  "n_segments": 308,
+  "n_ts_examples_total": 308,
+  "trained_clusters": [
+    0,
+    1
+  ],
+  "cross_cluster_cosine_mean": 0.0681343525648117,
+  "cross_cluster_cosine_min": 0.0681343525648117,
+  "cross_cluster_cosine_max": 0.0681343525648117,
+  "cluster_results": [
+    {
+      "cluster_id": 0,
+      "status": "ok",
+      "n_train": 115,
+      "n_val": 30,
+      "n_test": 24,
+      "n_latents": 169,
+      "max_time_steps": 279,
+      "final_train_loss": 84.23264973958334,
+      "final_val_loss": 93.66485214233398,
+      "n_epochs_trained": 49
+    },
+    {
+      "cluster_id": 1,
+      "status": "ok",
+      "n_train": 84,
+      "n_val": 19,
+      "n_test": 19,
+      "n_latents": 122,
+      "max_time_steps": 242,
+      "final_train_loss": 76.6940786188299,
+      "final_val_loss": 91.89329528808594,
+      "n_epochs_trained": 50
+    },
+    {
+      "cluster_id": 2,
+      "status": "skipped",
+      "n_train": 13,
+      "n_val": 0,
+      "n_test": 4
+    }
+  ]
+}
